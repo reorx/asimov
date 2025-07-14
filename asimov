@@ -27,59 +27,115 @@ readonly ASIMOV_SKIP_PATHS=(
     ~/Library
 )
 
-# A list of "directory"/"sentinel" pairs.
-#
-# Directories will only be excluded if the dependency ("sentinel") file exists.
-#
-# For example, 'node_modules package.json' means "exclude node_modules/ from the
-# Time Machine backups if there is a package.json file next to it."
-readonly ASIMOV_VENDOR_DIR_SENTINELS=(
-    '.build Package.swift'             # Swift
-    #'.gradle build.gradle'             # Gradle
-    #'.gradle build.gradle.kts'         # Gradle Kotlin Script
-    #'build build.gradle'               # Gradle build files
-    #'build build.gradle.kts'           # Gradle Kotlin Script build files
-    #'.dart_tool pubspec.yaml'          # Flutter (Dart)
-    #'.packages pubspec.yaml'           # Pub (Dart)
-    #'.stack-work stack.yaml'           # Stack (Haskell)
-    '.tox tox.ini'                     # Tox (Python)
-    '.nox noxfile.py'                  # Nox (Python)
-    '.vagrant Vagrantfile'             # Vagrant
-    '.venv requirements.txt'           # virtualenv (Python)
-    'venv requirements.txt'           # virtualenv (Python)
-    '.venv pyproject.toml'             # virtualenv (Python)
-    #'Carthage Cartfile'                # Carthage
-    'Pods Podfile'                     # CocoaPods
-    #'bower_components bower.json'      # Bower (JavaScript)
-    #'build build.gradle'               # Gradle
-    #'build build.gradle.kts'           # Gradle Kotlin Script
-    #'build pubspec.yaml'               # Flutter (Dart)
-    'build setup.py'                   # Python
-    'dist setup.py'                    # PyPI Publishing (Python)
-    '.next next.config.js'             # NextJS (NodeJS)
-    #'node_modules package.json'        # npm, Yarn (NodeJS)
-    #'.parcel-cache package.json'       # Parcel v2 cache (JavaScript)
-    'target Cargo.toml'                # Cargo (Rust)
-    #'target pom.xml'                   # Maven
-    #'target build.sbt'                 # Sbt (Scala)
-    #'target plugins.sbt'               # Sbt plugins (Scala)
-    #'vendor composer.json'             # Composer (PHP)
-    'vendor Gemfile'                   # Bundler (Ruby)
-    'vendor go.mod'                    # Go Modules (Golang)
-    'venv requirements.txt'            # virtualenv (Python)
-    #'deps mix.exs'                     # Mix dependencies (Elixir)
-    #'.build mix.exs'                   # Mix build files (Elixir)
-    #'.terraform.d .terraformrc'        # Terraform plugin cache
-    #'.terragrunt-cache terragrunt.hcl' # Terragrunt
-    #'cdk.out cdk.json'                 # AWS CDK
-)
+# Debug function to print messages only when DEBUG env var is set
+debug_echo() {
+    if [[ -n "${DEBUG:-}" ]]; then
+        echo "$@"
+    fi
+}
+
+# Get the config directory path, using XDG_CONFIG_HOME or ~/.config as fallback
+get_config_dir() {
+    if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+        echo "${XDG_CONFIG_HOME}/asimov"
+    else
+        echo "${HOME}/.config/asimov"
+    fi
+}
+
+# Initialize the default config file if it doesn't exist
+init_config_file() {
+    local config_dir="$(get_config_dir)"
+    local config_file="${config_dir}/dirs.txt"
+
+    # Create config directory if it doesn't exist
+    mkdir -p "${config_dir}"
+
+    # Create config file with default values if it doesn't exist
+    if [[ ! -f "${config_file}" ]]; then
+        cat > "${config_file}" << 'EOF'
+# Directory/sentinel pairs for Asimov
+# Format: <directory> <sentinel_file>
+# Lines starting with # are comments and will be ignored
+
+.build Package.swift
+.tox tox.ini
+.nox noxfile.py
+.vagrant Vagrantfile
+.venv requirements.txt
+venv requirements.txt
+.venv pyproject.toml
+Pods Podfile
+build setup.py
+dist setup.py
+.next next.config.js
+target Cargo.toml
+vendor Gemfile
+vendor go.mod
+venv requirements.txt
+
+# Commented out entries (uncomment to enable):
+# .gradle build.gradle
+# .gradle build.gradle.kts
+# build build.gradle
+# build build.gradle.kts
+# .dart_tool pubspec.yaml
+# .packages pubspec.yaml
+# .stack-work stack.yaml
+# Carthage Cartfile
+# bower_components bower.json
+# build pubspec.yaml
+# node_modules package.json
+# .parcel-cache package.json
+# target pom.xml
+# target build.sbt
+# target plugins.sbt
+# vendor composer.json
+# deps mix.exs
+# .build mix.exs
+# .terraform.d .terraformrc
+# .terragrunt-cache terragrunt.hcl
+# cdk.out cdk.json
+EOF
+        echo "Created default config file at ${config_file}"
+    fi
+}
+
+# Read and parse the config file to get directory/sentinel pairs
+read_config_file() {
+    local config_file="$(get_config_dir)/dirs.txt"
+    declare -a config_pairs=()
+
+    # Read file line by line, skip comments and empty lines
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Add non-comment lines to array
+        config_pairs+=("$line")
+    done < "$config_file"
+
+    # Output the array elements
+    printf '%s\n' "${config_pairs[@]}"
+}
+
+# Initialize config file and read directory/sentinel pairs from it
+init_config_file
+
+# Read directory/sentinel pairs from config file (cross-platform approach)
+declare -a ASIMOV_VENDOR_DIR_SENTINELS=()
+while IFS= read -r line; do
+    ASIMOV_VENDOR_DIR_SENTINELS+=("$line")
+done < <(read_config_file)
+
+echo "${#ASIMOV_VENDOR_DIR_SENTINELS[@]} rules loaded"
 
 # Exclude the given paths from Time Machine backups.
 # Reads the newline-separated list of paths from stdin.
 exclude_file() {
     local path
     while IFS=$'\n' read -r path; do
-        echo "${path}"
+        debug_echo "Handling path: ${path}"
         if tmutil isexcluded "${path}" | grep -Fq '[Excluded]'; then
             echo "- ${path} is already excluded, skipping."
             continue
@@ -96,7 +152,7 @@ exclude_file() {
         # so we assume that tmutil cannot add dirs without write permission,
         # here we skip those dirs to prevent the error
         if [ ! -w "${path}" ]; then
-          echo "skip not writable path"
+          echo "Warn: skip not writable path ${path}"
           continue
         fi
 
@@ -139,6 +195,6 @@ done
 
 
 printf '\n\033[0;36mFinding dependency directories with corresponding definition files…\033[0m\n'
-echo "${find_parameters_skip[@]}"
-echo "${find_parameters_vendor[@]}"
+debug_echo "${find_parameters_skip[@]}"
+debug_echo "${find_parameters_vendor[@]}"
 find "${ASIMOV_ROOT}" \( "${find_parameters_skip[@]}" \) \( -false "${find_parameters_vendor[@]}" \) | exclude_file
