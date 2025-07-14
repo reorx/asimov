@@ -84,6 +84,21 @@ exclude_file() {
             continue
         fi
 
+        # Some dir may cause error with tmutil:
+        # /Users/reorx/Code/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.23.4.darwin-arm64/src/cmd/vendor: Error (-50) while attempting to change exclusion setting.
+        # by checking the dir's attributes:
+        # $ /bin/ls -l /Users/reorx/Code/go/pkg/mod/golang.org/
+        # total 0
+        # dr-xr-xr-x@ 14 reorx  staff  448 Jan  2 14:14 toolchain@v0.0.1-go1.23.4.darwin-arm64
+        # drwxr-xr-x  22 reorx  staff  704 Jan  2 14:24 x
+        # we can see that it does not have write permission.
+        # so we assume that tmutil cannot add dirs without write permission,
+        # here we skip those dirs to prevent the error
+        if [ ! -w "${path}" ]; then
+          echo "skip not writable path"
+          continue
+        fi
+
         tmutil addexclusion "${path}"
 
         sizeondisk=$(du -hs "${path}" | cut -f1)
