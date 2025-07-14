@@ -79,6 +79,7 @@ readonly ASIMOV_VENDOR_DIR_SENTINELS=(
 exclude_file() {
     local path
     while IFS=$'\n' read -r path; do
+        echo "${path}"
         if tmutil isexcluded "${path}" | grep -Fq '[Excluded]'; then
             echo "- ${path} is already excluded, skipping."
             continue
@@ -105,6 +106,7 @@ exclude_file() {
         echo "- ${path} has been excluded from Time Machine backups (${sizeondisk})."
     done
 }
+
 
 # Iterate over the skip directories to construct the `find` expression.
 declare -a find_parameters_skip=()
@@ -135,8 +137,8 @@ for i in "${ASIMOV_VENDOR_DIR_SENTINELS[@]}"; do
     \) )
 done
 
-printf '\n\033[0;36mFinding dependency directories with corresponding definition files…\033[0m\n'
 
-find "${ASIMOV_ROOT}" \( "${find_parameters_skip[@]}" \) \( -false "${find_parameters_vendor[@]}" \) \
-    | exclude_file \
-    ;
+printf '\n\033[0;36mFinding dependency directories with corresponding definition files…\033[0m\n'
+echo "${find_parameters_skip[@]}"
+echo "${find_parameters_vendor[@]}"
+find "${ASIMOV_ROOT}" \( "${find_parameters_skip[@]}" \) \( -false "${find_parameters_vendor[@]}" \) | exclude_file
